@@ -7,6 +7,7 @@ WeGame + Rocom HTTP API 客户端
 - session 管理接口依据 X-API-Key + X-User-Identifier 进行身份校验
 """
 
+import asyncio
 import httpx
 from typing import Optional, Dict, Any, List
 from astrbot.api import logger
@@ -153,6 +154,82 @@ class RocomClient:
             logger.error(f"[Rocom API] {method} {path} 异常: {e}")
             self._set_last_error(f"异常: {e}")
             return None
+
+    async def _request_with_status(
+        self,
+        method: str,
+        path: str,
+        headers: Dict[str, str],
+        params: Optional[Dict] = None,
+        json_data: Optional[Dict] = None,
+        accepted_statuses: tuple[int, ...] = (200,),
+    ) -> tuple[Optional[int], Optional[Dict]]:
+        try:
+            self._clear_last_error()
+            client = await self._get_client()
+
+            if method == "GET":
+                resp = await client.get(
+                    f"{self.base_url}{path}", headers=headers, params=params
+                )
+            elif method == "POST":
+                resp = await client.post(
+                    f"{self.base_url}{path}",
+                    headers=headers,
+                    json=json_data,
+                    params=params,
+                )
+            elif method == "DELETE":
+                resp = await client.delete(f"{self.base_url}{path}", headers=headers)
+            else:
+                logger.error(f"[Rocom API] 不支持的 HTTP 方法: {method}")
+                self._set_last_error(f"不支持的 HTTP 方法: {method}")
+                return None, None
+
+            if resp.status_code not in accepted_statuses:
+                body_hint = resp.text[:300] if resp.text else ""
+                try:
+                    body_json = resp.json()
+                    body_hint = body_json.get("message") or body_hint
+                except Exception:
+                    pass
+                logger.warning(f"[Rocom API] {path} HTTP 错误: {resp.status_code} {body_hint}")
+                self._set_last_error(f"HTTP {resp.status_code}: {body_hint}".strip(": "))
+                return None, None
+
+            if not resp.text or not resp.text.strip():
+                logger.warning(f"[Rocom API] {path} 响应为空")
+                self._set_last_error("响应为空")
+                return None, None
+
+            try:
+                data = resp.json()
+            except Exception as json_err:
+                logger.warning(
+                    f"[Rocom API] {path} JSON 解析失败: {json_err}, 响应内容: {resp.text[:200]}"
+                )
+                self._set_last_error("JSON 解析失败")
+                return None, None
+
+            if data.get("code") != 0:
+                err_message = data.get("message", "未知")
+                logger.warning(f"[Rocom API] {path} 错误: {err_message}")
+                self._set_last_error(str(err_message))
+                return None, None
+
+            return resp.status_code, data.get("data", {})
+        except httpx.TimeoutException:
+            logger.error(f"[Rocom API] {method} {path} 请求超时")
+            self._set_last_error("请求超时")
+            return None, None
+        except httpx.RequestError as e:
+            logger.error(f"[Rocom API] {method} {path} 请求失败: {e}")
+            self._set_last_error(f"请求失败: {e}")
+            return None, None
+        except Exception as e:
+            logger.error(f"[Rocom API] {method} {path} 异常: {e}")
+            self._set_last_error(f"异常: {e}")
+            return None, None
 
     async def _get(
         self, path: str, headers: Dict[str, str], params: Optional[Dict] = None
@@ -546,20 +623,61 @@ class RocomClient:
             params=params,
         )
 
+    async def get_ingame_task(self, task_id: str) -> tuple[Optional[int], Optional[Dict]]:
+        return await self._request_with_status(
+            "GET",
+            f"/api/v1/games/rocom/ingame/tasks/{task_id}",
+            self._wegame_headers(),
+            accepted_statuses=(200, 202),
+        )
+
     async def ingame_player_search(self, uid: str) -> Optional[Dict]:
-        params = {"uid": uid}
-        data = await self._get(
-            "/api/v1/games/rocom/ingame/player/search",
-            self._wegame_headers(),
-            params=params,
+        uid = self._sanitize_uid(uid)
+        if not uid:
+            self._set_last_error("UID 不能为空")
+            return None
+
+        path = "/api/v1/games/rocom/ingame/player/search"
+        headers = self._wegame_headers()
+        wait_ms = 5000
+
+        status_code, data = await self._request_with_status(
+            "POST",
+            path,
+            headers,
+            json_data={"uid": uid, "wait_ms": wait_ms},
+            accepted_statuses=(200, 202),
         )
-        if data is not None:
+        if status_code == 200:
             return data
-        return await self._post(
-            "/api/v1/games/rocom/ingame/player/search",
-            self._wegame_headers(),
-            json_data={"uid": uid},
-        )
+
+        if status_code is None:
+            status_code, data = await self._request_with_status(
+                "GET",
+                path,
+                headers,
+                params={"uid": uid, "wait_ms": wait_ms},
+                accepted_statuses=(200, 202),
+            )
+            if status_code == 200:
+                return data
+
+        task_id = (data or {}).get("task_id")
+        if not task_id:
+            if status_code == 202:
+                self._set_last_error("玩家搜索任务已入队，但未返回 task_id")
+            return None
+
+        for _ in range(8):
+            await asyncio.sleep(1)
+            task_status, task_data = await self.get_ingame_task(task_id)
+            if task_status == 200:
+                return task_data
+            if task_status is None:
+                return None
+
+        self._set_last_error(f"玩家搜索任务仍在队列中，请稍后重试（task_id: {task_id}）")
+        return None
 
     async def ingame_merchant_info(self, shop_id: int | str) -> Optional[Dict]:
         params = {"shop_id": shop_id}

@@ -12,7 +12,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/Entropy-Increase-Team/astrbot_plugin_rocom?style=for-the-badge\&color=45B7D1)](https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom/issues)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-FFc65f?style=for-the-badge\&logo=python)](https://github.com/Soulter/AstrBot)
 
-### 🚀 基于 WeGame API & 洛克王国数据 的查询工具 v2.6.0
+### 🚀 基于 WeGame API & 洛克王国数据 的查询工具 v2.7.0
 
 ### 扫码绑定 · 个人档案 · 最近战绩 · 精灵背包 · 阵容助手
 
@@ -248,6 +248,15 @@ astrbot_plugin_rocom/
 
 <details>
 <summary>点击展开版本历史</summary>
+
+### v2.7.0 (2026-04-26)
+
+**新增**
+- 远行商人订阅更新日志补充：已支持私聊订阅远行商人推送
+
+**优化**
+- 适配最新后端 UID 搜索队列机制，查询会优先同步等待并在返回 `task_id` 后继续异步轮询任务结果
+- 保持 `/洛克玩家` 与档案补充链路的返回结构不变，兼容新的异步查询流程
 
 ### v2.6.0 (2026-04-25)
 
