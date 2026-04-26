@@ -203,7 +203,7 @@ astrbot_plugin_rocom/
 
 | `洛克阵容` | `查看阵容` |
 |:---:|:---:|
-| <img width="2440" height="1854" alt="image" src="https://github.com/user-attachments/assets/3fb6f800-cae6-4a1b-9b14-1cc2715e0973"> | 阵容详细信息 |
+| <img width="2440" height="1854" alt="image" src="https://github.com/user-attachments/assets/3fb6f800-cae6-4a1b-9b14-1cc2715e0973"> | <img width="3216" height="3410" alt="db5ac911e2ec8840b3a4c367e59b2b5a" src="https://github.com/user-attachments/assets/1a6b56ae-73c5-4b9f-88b9-71d538a11ff6" /> |
 
 | `远行商人` | `精灵 Wiki` |
 |:---:|:---:|
