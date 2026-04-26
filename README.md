@@ -195,7 +195,8 @@ astrbot_plugin_rocom/
 
 | `洛克档案` | `洛克战绩` |
 |:---:|:---:|
-| <img width="1886" height="1072" alt="image" src="https://github.com/user-attachments/assets/fd92e4f2-8ed1-4522-ae7e-25ad3f64024d"> | <img width="1920" height="512" alt="image" src="https://github.com/user-attachments/assets/df897cf8-c16c-4d7a-8d3a-b6b578e6d7a5"> |
+| <img width="1888" height="1772" alt="1cdb78b007cb9ac6e013de50a1428af1" src="https://github.com/user-attachments/assets/3079330c-4741-40bc-a317-db3c30aec59f" />
+ | <img width="1920" height="512" alt="image" src="https://github.com/user-attachments/assets/df897cf8-c16c-4d7a-8d3a-b6b578e6d7a5"> |
 
 | `洛克背包` | `洛克交换大厅` |
 |:---:|:---:|
