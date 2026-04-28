@@ -1766,7 +1766,7 @@ class RocomPlugin(Star):
                 yield event.plain_result(
                     "⚠️ 绑定已保存，但当前账号暂时查不到洛克角色资料（上游错误 8258601）。"
                     "这通常表示该账号尚未完成洛克角色初始化，或上游暂未返回角色数据。"
-                    "你之后可直接重试 /洛克档案，无需重新登录。"
+                    "请在wegame登录洛克王国完成初始化。"
                 )
             else:
                 yield event.plain_result(
