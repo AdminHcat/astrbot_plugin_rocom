@@ -2515,7 +2515,7 @@ class RocomPlugin(Star):
     @filter.command("远行商人")
     async def rocom_merchant(self, event: AstrMessageEvent):
         """查询远行商人"""
-        img_url, _, products, round_info = await self._render_merchant_image(refresh=True)
+        img_url, _, products, round_info = await self._render_merchant_image()
         if img_url:
             yield event.image_result(img_url)
             return
