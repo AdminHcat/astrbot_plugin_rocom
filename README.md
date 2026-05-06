@@ -12,9 +12,9 @@
 [![GitHub issues](https://img.shields.io/github/issues/Entropy-Increase-Team/astrbot_plugin_rocom?style=for-the-badge\&color=45B7D1)](https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom/issues)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-FFc65f?style=for-the-badge\&logo=python)](https://github.com/Soulter/AstrBot)
 
-### 🚀 基于 WeGame API & 洛克王国数据 的查询工具 v2.7.0
+### 🚀 基于 WeGame API & 洛克王国数据 的查询工具 v3.0.0
 
-### 扫码绑定 · 个人档案 · 最近战绩 · 精灵背包 · 阵容助手
+### 扫码绑定 · 个人档案 · 家园查询 · 最近战绩 · 精灵背包 · 阵容助手
 
 **如果这个插件对你有帮助，请点亮⭐支持一下！**
 
@@ -43,7 +43,7 @@
 
 ✅ **消息撤回** - 登录链接与二维码超时、完成或被拒时自动撤回，保护账号安全
 
-✅ **数据查询** - 个人档案可视化渲染、近期对战详情、背包精灵图鉴检索、交换大厅、远行商人、阵容推荐
+✅ **数据查询** - 个人档案可视化渲染、家园菜园/守卫/室内精灵、近期对战详情、背包精灵图鉴检索、交换大厅、远行商人、阵容推荐
 
 ✅ **查蛋配种** - 离线蛋组查询、配种兼容性判断，支持精确/模糊/多候选智能匹配，并接入后端尺寸反查
 
@@ -85,6 +85,9 @@ playwright install chromium
 | `render_timeout` | number | `30000`                      | 图片渲染超时时间（毫秒）                            |
 | `merchant_subscription_enabled` | bool | `true` | 是否启用远行商人订阅推送（固定在 08:01 / 12:01 / 16:01 / 20:01 检查，空结果每 4 分钟最多重试 3 次） |
 | `merchant_subscription_items` | list | `["国王球","棱镜球","炫彩精灵蛋"]` | 远行商人默认订阅商品 |
+| `merchant_private_subscription_enabled` | bool | `true` | 是否允许用户在私聊中订阅远行商人推送 |
+| `home_subscription_enabled` | bool | `true` | 是否启用家园菜园和精灵灵感订阅推送 |
+| `home_subscription_interval_minutes` | int | `5` | 家园订阅检查间隔（分钟），按首个完成/全部完成两档推送 |
 
 ### 安全免责声明
 
@@ -117,6 +120,7 @@ astrbot_plugin_rocom/
     ├── personal-card/      # 洛克档案面板模板
     ├── record/             # 对战回放数据模板
     ├── exchange-hall/      # 洛克交换大厅模板
+    ├── home/               # 洛克家园菜园/守卫/室内精灵模板
     ├── pet-wiki/           # 精灵 wiki 模板
     ├── skill-wiki/         # 技能 wiki 模板
     ├── yuanxing-shangren/  # 远行商人模板
@@ -163,6 +167,10 @@ astrbot_plugin_rocom/
 | `远行商人` | 查询当前轮次远行商人商品 |
 | `洛克商店 <shop_id>` | 实验性功能：通过 ingame 接口查询指定商店信息，接口返回暂不稳定 |
 | `洛克玩家 <UID>` | 通过 ingame 接口查询玩家基础资料，当前推荐优先使用 |
+| `洛克家园 [UID]` | 通过 UID 查询自己或他人的家园菜园、守卫精灵和室内精灵情况 |
+| `订阅家园菜园 [UID]` | 订阅指定 UID 的菜园提醒，首个成熟和全部成熟时各推送一次 |
+| `订阅家园灵感 [UID]` | 订阅指定 UID 的精灵灵感提醒，首个完成和全部完成时各推送一次 |
+| `取消订阅家园 [菜园/灵感/全部] [UID]` | 取消当前会话的家园订阅 |
 | `订阅远行商人 [1/0] [商品...]` | 群主/群管理员/bot管理员可订阅远行商人提醒，`1` 为命中后 `@全体`，`0` 为普通提醒；不填商品则使用 WebUI 默认订阅商品 |
 | `取消订阅远行商人` | 关闭当前群远行商人订阅 |
 | `洛克好友关系 <id1,id2>` | 实验性功能：仅能拿到有限状态字段，关系说明暂不稳定（需登录） |
@@ -217,6 +225,10 @@ astrbot_plugin_rocom/
 |:---:|:---:|
 | <img width="1640" height="4348" alt="cf5e99b9fd2bef74b4a39cc5c44ba3a3" src="https://github.com/user-attachments/assets/fa6e756e-b7e5-4f7a-9928-75dbb7931b59" /> | <img width="1280" height="952" alt="54c8265461499be1160ccedf6248f3d4_720" src="https://github.com/user-attachments/assets/06e6e587-364d-4fbf-928c-011c42a9f19f" /> |
 
+| `洛克家园` | `预留展示位` |
+|:---:|:---:|
+| <!-- TODO: 替换为洛克家园预览图 --><br>待补充 | <!-- TODO: 替换为其他功能预览图 --><br>待补充 |
+
 </details>
 
 ***
@@ -249,10 +261,23 @@ astrbot_plugin_rocom/
 <details>
 <summary>点击展开版本历史</summary>
 
+### v3.0.0 (2026-05-06)
+
+**新增**
+- 新增家园渲染模板，展示家园概览、菜园作物、守卫精灵和室内精灵状态
+- 家园菜园接入本地作物名称与图标映射，展示作物名、图标、成熟状态、产量和可偷次数
+- 家园订阅支持菜园和精灵灵感两类提醒，并按首个完成、全部完成两档推送
+
+**优化**
+- 帮助菜单和 README 同步补充家园查询、家园订阅的新版说明
+- 优化家园模板中灵感完成、灵感收集中、未喂食和守卫中的视觉状态区分
+
 ### v2.7.0 (2026-04-26)
 
 **新增**
 - 远行商人订阅更新日志补充：已支持私聊订阅远行商人推送
+- 新增 `/洛克家园 [UID]`，支持通过 UID 查询自己或他人的家园菜园、守卫精灵和室内精灵情况
+- 新增 `/订阅家园菜园`、`/订阅家园灵感` 与 `/取消订阅家园`，支持菜园/灵感首个完成和全部完成两档提醒
 
 **优化**
 - 适配最新后端 UID 搜索队列机制，查询会优先同步等待并在返回 `task_id` 后继续异步轮询任务结果

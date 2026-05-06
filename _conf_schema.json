@@ -64,5 +64,17 @@
     "description": "允许个人私聊订阅远行商人",
     "hint": "开启后允许用户在私聊中订阅远行商人推送",
     "default": true
+  },
+  "home_subscription_enabled": {
+    "type": "bool",
+    "description": "启用家园菜园和灵感订阅推送",
+    "hint": "开启后会定时检查已订阅 UID 的菜园成熟和精灵灵感完成状态，并按首个完成/全部完成两档推送",
+    "default": true
+  },
+  "home_subscription_interval_minutes": {
+    "type": "int",
+    "description": "家园订阅检查间隔",
+    "hint": "单位：分钟。用于菜园成熟和精灵灵感订阅轮询",
+    "default": 5
   }
 }
