@@ -227,7 +227,7 @@ astrbot_plugin_rocom/
 
 | `洛克家园` | `预留展示位` |
 |:---:|:---:|
-| <!-- TODO: 替换为洛克家园预览图 --><br>待补充 | <!-- TODO: 替换为其他功能预览图 --><br>待补充 |
+| <img width="3840" height="3873" alt="d361600220e182b3da02fd9e2e0a0af9" src="https://github.com/user-attachments/assets/8b0dd3bf-6489-4278-a321-780d732a175c" /> | <img width="3840" height="3873" alt="d361600220e182b3da02fd9e2e0a0af9" src="https://github.com/user-attachments/assets/997f79af-dc31-473b-af60-2a820ae75525" /> |
 
 </details>
 
