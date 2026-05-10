@@ -47,7 +47,7 @@
   "merchant_subscription_enabled": {
     "type": "bool",
     "description": "启用远行商人订阅推送",
-    "hint": "开启后会在每日 08:01 / 12:01 / 16:01 / 20:01 检查一次，若为空则每 4 分钟最多重试 3 次",
+    "hint": "开启后会在每日 08:01 / 12:01 / 16:01 / 20:01 前后 30 秒随机检查一次，若为空则每 4 分钟前后 30 秒最多重试 3 次",
     "default": true
   },
   "merchant_subscription_items": {

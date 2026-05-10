@@ -12,7 +12,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/Entropy-Increase-Team/astrbot_plugin_rocom?style=for-the-badge\&color=45B7D1)](https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom/issues)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-FFc65f?style=for-the-badge\&logo=python)](https://github.com/Soulter/AstrBot)
 
-### 🚀 基于 WeGame API & 洛克王国数据 的查询工具 v3.0.0
+### 🚀 基于 WeGame API & 洛克王国数据 的查询工具 v3.1.0
 
 ### 扫码绑定 · 个人档案 · 家园查询 · 最近战绩 · 精灵背包 · 阵容助手
 
@@ -83,7 +83,7 @@ playwright install chromium
 | `api_base_url`   | string | `https://wegame.shallow.ink` | API 服务后端地址                              |
 | `wegame_api_key` | string | 无                            | ⚠️ 必填，拥有 wegame 作用域的 API Key，统一用于各项查询获取 |
 | `render_timeout` | number | `30000`                      | 图片渲染超时时间（毫秒）                            |
-| `merchant_subscription_enabled` | bool | `true` | 是否启用远行商人订阅推送（固定在 08:01 / 12:01 / 16:01 / 20:01 检查，空结果每 4 分钟最多重试 3 次） |
+| `merchant_subscription_enabled` | bool | `true` | 是否启用远行商人订阅推送（在 08:01 / 12:01 / 16:01 / 20:01 前后 30 秒随机检查，空结果每 4 分钟前后 30 秒最多重试 3 次） |
 | `merchant_subscription_items` | list | `["国王球","棱镜球","炫彩精灵蛋"]` | 远行商人默认订阅商品 |
 | `merchant_private_subscription_enabled` | bool | `true` | 是否允许用户在私聊中订阅远行商人推送 |
 | `home_subscription_enabled` | bool | `true` | 是否启用家园菜园和精灵灵感订阅推送 |
@@ -260,6 +260,20 @@ astrbot_plugin_rocom/
 
 <details>
 <summary>点击展开版本历史</summary>
+
+### v3.1.0 (2026-05-10)
+
+**新增**
+- `/洛克QQ登录` 增加小写别名 `/洛克qq登录`
+- `/远行商人` 增加快捷别名 `/yxsr`
+- 远行商人渲染页新增“今日其他时段”区域，按时间段展示当日其他轮次商品，每段最多展示 5 个
+
+**优化**
+- 远行商人订阅检查增加 `±30s` 随机延迟，空返回重试也加入 `±30s` 抖动，降低刷新窗口和并发请求冲突
+- 家园订阅推送将 UID 展示优化为本地绑定的洛克昵称，并自动 @ 对应绑定 QQ 用户
+
+**修复**
+- 修复远行商人订阅空返回重试链路失效的问题
 
 ### v3.0.0 (2026-05-06)
 

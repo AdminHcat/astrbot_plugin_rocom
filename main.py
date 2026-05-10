@@ -5,6 +5,7 @@ import tempfile
 import asyncio
 import re
 import json
+import random
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List
 
@@ -19,7 +20,7 @@ from .core.user import UserManager, MerchantSubscriptionManager, HomeSubscriptio
 from .core.render import Renderer
 from .core.egg_service import EggService, SearchResult
 
-@register("astrbot_plugin_rocom", "bvzrays & 熵增项目组", "洛克王国插件", "v3.0.0", "https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom")
+@register("astrbot_plugin_rocom", "bvzrays & 熵增项目组", "洛克王国插件", "v3.1.0", "https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom")
 class RocomPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -65,6 +66,7 @@ class RocomPlugin(Star):
         self._merchant_subscription_task = None
         self._merchant_retry_delay_seconds = 240
         self._merchant_retry_times = 3
+        self._merchant_jitter_seconds = 30
         self.home_subscription_enabled = self.config.get(
             "home_subscription_enabled", True
         )
@@ -666,7 +668,7 @@ class RocomPlugin(Star):
 
     def _home_subscription_level_message(
         self,
-        uid: str,
+        display_name: str,
         kind: str,
         level: str,
         total_count: int,
@@ -678,12 +680,37 @@ class RocomPlugin(Star):
         level_text = "首个" if level == "first" else "全部"
         title = f"家园{kind_text}{level_text}{action_text}提醒"
         lines = [
-            f"{title}：{uid}",
+            f"{title}：{display_name}",
             f"进度：{len(ready_items)}/{total_count}",
         ]
         if names:
             lines.append("已完成：" + "、".join(names[:8]))
         return "\n".join(lines)
+
+    async def _home_subscription_targets(self, uid: str, data: Dict[str, Any]) -> tuple[str, List[Dict[str, str]]]:
+        display_name = str((data or {}).get("homeName") or uid)
+        mentions = []
+        try:
+            all_bindings = await self.user_mgr.get_all_users_bindings()
+        except Exception as e:
+            logger.warning(f"[Rocom] 读取家园订阅绑定用户失败: {e}")
+            return display_name, mentions
+
+        seen_users = set()
+        for user_id, bindings in all_bindings.items():
+            if str(user_id) in seen_users:
+                continue
+            for binding in bindings or []:
+                if str(binding.get("role_id", "") or "") != str(uid):
+                    continue
+                nickname = str(binding.get("nickname") or display_name or uid)
+                if nickname and display_name == str(uid):
+                    display_name = nickname
+                if str(user_id).isdigit():
+                    mentions.append({"qq": str(user_id), "name": nickname})
+                    seen_users.add(str(user_id))
+                break
+        return display_name, mentions
 
     async def _check_home_subscriptions(self):
         all_subs = await self.home_sub_mgr.get_all_subscriptions()
@@ -732,12 +759,19 @@ class RocomPlugin(Star):
                     await self.home_sub_mgr.upsert_subscription(key, sub)
                 continue
 
+            display_name, mentions = await self._home_subscription_targets(uid, data)
             messages = [
-                self._home_subscription_level_message(uid, kind, level, total_count, ready_items, names)
+                self._home_subscription_level_message(display_name, kind, level, total_count, ready_items, names)
                 for level in push_levels
             ]
             try:
-                await self.context.send_message(sub["umo"], MessageChain().message("\n\n".join(messages)))
+                chain = MessageChain()
+                for mention in mentions:
+                    chain.at(mention.get("name") or display_name, mention.get("qq"))
+                if mentions:
+                    chain.message("\n")
+                chain.message("\n\n".join(messages))
+                await self.context.send_message(sub["umo"], chain)
             except Exception as e:
                 logger.warning(f"[Rocom] 家园订阅推送失败: {e}")
                 continue
@@ -775,9 +809,11 @@ class RocomPlugin(Star):
             try:
                 now = datetime.now(self._cn_tz())
                 next_check = self._next_merchant_check_time(now)
-                sleep_seconds = max(1, (next_check - now).total_seconds())
+                jitter = random.uniform(-self._merchant_jitter_seconds, self._merchant_jitter_seconds)
+                target_check = next_check + timedelta(seconds=jitter)
+                sleep_seconds = max(1, (target_check - now).total_seconds())
                 logger.info(
-                    f"[Rocom] 下次远行商人订阅检查时间：{next_check.strftime('%Y-%m-%d %H:%M:%S CST')}"
+                    f"[Rocom] 下次远行商人订阅检查时间：{target_check.strftime('%Y-%m-%d %H:%M:%S CST')}（基准 {next_check.strftime('%H:%M:%S')}，随机偏移 {jitter:.1f}s）"
                 )
                 await asyncio.sleep(sleep_seconds)
                 await self._run_merchant_subscription_window()
@@ -875,63 +911,128 @@ class RocomPlugin(Star):
         return False
 
 
-    def _merchant_products_from_response(self, res: Dict[str, Any] | None):
+    def _merchant_payload(self, res: Dict[str, Any] | None) -> Dict[str, Any]:
         payload = res or {}
+        if isinstance(payload.get("data"), dict):
+            payload = payload.get("data") or {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _merchant_timestamp_ms(self, value: Any) -> int | None:
+        try:
+            if value is None or value == "":
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _merchant_product_from_item(
+        self,
+        item: Dict[str, Any],
+        fallback_icon: str,
+        activity: Dict[str, Any],
+        category: str,
+        now_ms: int,
+    ) -> Dict[str, Any]:
+        start_ms = self._merchant_timestamp_ms(item.get("start_time"))
+        end_ms = self._merchant_timestamp_ms(item.get("end_time"))
+        if start_ms is None:
+            start_ms = self._merchant_timestamp_ms(activity.get("start_time"))
+        if end_ms is None:
+            end_ms = self._merchant_timestamp_ms(activity.get("end_time"))
+        is_active = True
+        if start_ms is not None and end_ms is not None:
+            is_active = start_ms <= now_ms < end_ms
+        status_label = "当前轮次"
+        if start_ms is not None and now_ms < start_ms:
+            status_label = "未开始"
+        elif end_ms is not None and now_ms >= end_ms:
+            status_label = "已结束"
+        return {
+            "name": item.get("name", "未知商品"),
+            "image": item.get("icon_url") or item.get("iconUrl") or fallback_icon,
+            "time_label": self._format_merchant_window({"start_time": start_ms, "end_time": end_ms}),
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+            "is_active": is_active,
+            "status_label": status_label,
+            "category": category,
+        }
+
+    def _merchant_history_groups(
+        self,
+        products: List[Dict[str, Any]],
+        now_ms: int,
+    ) -> List[Dict[str, Any]]:
+        today = datetime.fromtimestamp(now_ms / 1000, tz=self._cn_tz()).strftime("%Y-%m-%d")
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for product in products:
+            if product.get("is_active"):
+                continue
+            start_ms = self._merchant_timestamp_ms(product.get("start_ms"))
+            if start_ms is None:
+                continue
+            start_dt = datetime.fromtimestamp(start_ms / 1000, tz=self._cn_tz())
+            if start_dt.strftime("%Y-%m-%d") != today:
+                continue
+            key = f"{start_ms}-{product.get('end_ms') or ''}"
+            group = grouped.setdefault(
+                key,
+                {
+                    "time_label": product.get("time_label") or "--",
+                    "status_label": product.get("status_label") or "其他时段",
+                    "sort": start_ms,
+                    "products": [],
+                },
+            )
+            names = {item.get("name") for item in group["products"]}
+            if product.get("name") not in names and len(group["products"]) < 5:
+                group["products"].append(product)
+        return [
+            {k: v for k, v in group.items() if k != "sort"}
+            for group in sorted(grouped.values(), key=lambda item: item["sort"])
+            if group.get("products")
+        ]
+
+    def _merchant_products_from_response(self, res: Dict[str, Any] | None):
+        payload = self._merchant_payload(res)
         activities = payload.get("merchantActivities")
         if activities is None:
             activities = payload.get("merchant_activities")
         activities = activities or []
         activity = activities[0] if activities else {}
-        props = activity.get("get_props") or []
-        pets = activity.get("get_pets") or []
+        buckets = [
+            ("道具", activity.get("get_props") or []),
+            ("额外道具", activity.get("get_extra_props") or []),
+            ("精灵", activity.get("get_pets") or []),
+        ]
         products = []
+        all_products = []
         fallback_icon = "{{_res_path}}img/logo.cVSpb3sL.png"
         now_ms = int(datetime.now(self._cn_tz()).timestamp() * 1000)
 
-        def is_active(item: Dict[str, Any]) -> bool:
-            start_time = item.get("start_time")
-            end_time = item.get("end_time")
-            if start_time is None or end_time is None:
-                return True
-            try:
-                return int(start_time) <= now_ms < int(end_time)
-            except (TypeError, ValueError):
-                return True
-
-        for item in props:
-            if not is_active(item):
-                continue
-            products.append(
-                {
-                    "name": item.get("name", "未知商品"),
-                    "image": item.get("icon_url") or fallback_icon,
-                    "time_label": self._format_merchant_window(item),
-                }
-            )
-        for item in pets:
-            if not is_active(item):
-                continue
-            products.append(
-                {
-                    "name": item.get("name", "未知精灵"),
-                    "image": item.get("icon_url") or fallback_icon,
-                    "time_label": self._format_merchant_window(item),
-                }
-            )
-        return activity, products
+        for category, items in buckets:
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                product = self._merchant_product_from_item(item, fallback_icon, activity, category, now_ms)
+                all_products.append(product)
+                if product.get("is_active"):
+                    products.append(product)
+        return activity, products, self._merchant_history_groups(all_products, now_ms)
 
 
     async def _render_merchant_image(self, refresh: bool = False):
         res = await self.client.get_merchant_info(refresh=refresh)
-        activity, products = self._merchant_products_from_response(res)
+        activity, products, history_groups = self._merchant_products_from_response(res)
         round_info = self._current_merchant_round()
-        return await self._render_merchant_image_from_data(activity, products, round_info), res, products, round_info
+        return await self._render_merchant_image_from_data(activity, products, round_info, history_groups), res, products, round_info
 
     async def _render_merchant_image_from_data(
         self,
         activity: Dict[str, Any] | None,
         products: List[Dict[str, Any]] | None,
         round_info: Dict[str, Any] | None,
+        history_groups: List[Dict[str, Any]] | None = None,
     ):
         data = {
             "background": "{{_res_path}}img/bg.C8CUoi7I.jpg",
@@ -941,6 +1042,7 @@ class RocomPlugin(Star):
             "product_count": len(products or []),
             "round_info": round_info or self._current_merchant_round(),
             "products": products or [],
+            "history_groups": history_groups or [],
         }
         img_url = await self.renderer.render_html(
             "render/yuanxing-shangren/index.html",
@@ -955,16 +1057,22 @@ class RocomPlugin(Star):
 
     async def _run_merchant_subscription_window(self):
         for retry_index in range(self._merchant_retry_times + 1):
+            if retry_index > 0:
+                delay = max(
+                    1,
+                    self._merchant_retry_delay_seconds
+                    + random.uniform(-self._merchant_jitter_seconds, self._merchant_jitter_seconds),
+                )
+                logger.warning(
+                    f"[Rocom] 远行商人返回为空，{delay:.1f} 秒后进行第 {retry_index} 次重试"
+                )
+                await asyncio.sleep(delay)
             status = await self._check_merchant_subscriptions()
             if status != "empty":
                 return
             if retry_index >= self._merchant_retry_times:
                 logger.warning("[Rocom] 远行商人订阅检查连续为空，已暂停本轮重试")
                 return
-            logger.warning(
-                f"[Rocom] 远行商人返回为空，{self._merchant_retry_delay_seconds // 60} 分钟后进行第 {retry_index + 1} 次重试"
-            )
-            await asyncio.sleep(self._merchant_retry_delay_seconds)
 
     async def _check_merchant_subscriptions(self) -> str:
         all_subs = await self.merchant_sub_mgr.get_all_subscriptions()
@@ -972,7 +1080,7 @@ class RocomPlugin(Star):
             return "no_subscriptions"
         try:
             res = await self.client.get_merchant_info(refresh=True)
-            activity, products = self._merchant_products_from_response(res)
+            activity, products, history_groups = self._merchant_products_from_response(res)
         except Exception as e:
             logger.warning(f"[Rocom] 远行商人订阅查询失败，视为空结果等待重试: {e}")
             return "empty"
@@ -993,7 +1101,7 @@ class RocomPlugin(Star):
             return "done"
         img_url = None
         try:
-            img_url = await self._render_merchant_image_from_data(activity, products, round_info)
+            img_url = await self._render_merchant_image_from_data(activity, products, round_info, history_groups)
         except Exception as e:
             logger.warning(f"[Rocom] 远行商人订阅图片预渲染失败，将仅发送文本: {e}")
         for key, sub, matched in pending_pushes:
@@ -2227,7 +2335,7 @@ class RocomPlugin(Star):
         async for res in self.rocom_help(event):
             yield res
 
-    @filter.command("洛克QQ登录")
+    @filter.command("洛克QQ登录", alias={"洛克qq登录"})
     async def rocom_qq_login(self, event: AstrMessageEvent):
         """QQ 扫码登录"""
         user_id = event.get_sender_id()
@@ -2938,7 +3046,7 @@ class RocomPlugin(Star):
             f"待后端重新开放后会恢复该功能。"
         )
 
-    @filter.command("远行商人")
+    @filter.command("远行商人", alias={"yxsr"})
     async def rocom_merchant(self, event: AstrMessageEvent):
         """查询远行商人"""
         img_url, _, products, round_info = await self._render_merchant_image()
