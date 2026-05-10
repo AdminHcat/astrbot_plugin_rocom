@@ -233,21 +233,40 @@ body {
     font-weight: 700;
 }
 
-.product-side {
-    align-self: stretch;
-    display: flex;
+.price-pill,
+.limit-pill {
+    min-width: 112px;
+    display: inline-flex;
     align-items: center;
-    justify-content: flex-end;
-}
-
-.product-slot {
-    padding: 10px 14px;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: 7px 13px;
     border-radius: 16px;
     background: rgba(255,255,255,0.72);
     border: 1px solid rgba(179, 123, 45, 0.18);
     color: #8b5e2b;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 700;
+}
+
+.coin-icon {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
+.product-side {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+}
+
+.product-side-empty {
+    min-width: 112px;
 }
 
 .product-empty {
@@ -466,7 +485,18 @@ body {
                         <div class="product-time">北京时间 {{product.time_label}}</div>
                     </div>
                     <div class="product-side">
-                        <div class="product-slot">本轮商品</div>
+                        {% if product.price is not none %}
+                        <div class="price-pill">
+                            <img class="coin-icon" src="{{_res_path}}img/coin.png" alt="金币">
+                            <span>{{product.price}}</span>
+                        </div>
+                        {% endif %}
+                        {% if product.buy_limit_num is not none %}
+                        <div class="limit-pill">限购 {{product.buy_limit_num}}</div>
+                        {% endif %}
+                        {% if product.price is none and product.buy_limit_num is none %}
+                        <div class="product-side-empty"></div>
+                        {% endif %}
                     </div>
                 </div>
                 {% endfor %}
