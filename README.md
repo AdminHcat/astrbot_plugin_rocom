@@ -215,7 +215,8 @@ astrbot_plugin_rocom/
 
 | `远行商人` | `精灵 Wiki` |
 |:---:|:---:|
-| <img width="1280" height="718" alt="0169749e11298492f0007497fe7b73ec_720" src="https://github.com/user-attachments/assets/0ab6bbd3-c115-4ee6-af54-102ab3f2404a" /> | <img width="1840" height="6164" alt="6bd48e838ede2c2784681cef61bb0c76" src="https://github.com/user-attachments/assets/9aa29eca-eb9a-4bab-9664-29c12e5f11e6" /> |
+| <img width="1640" height="2990" alt="ce90506499021979daa2252d6c6ced7f" src="https://github.com/user-attachments/assets/42736f63-3f0d-43ee-a546-76adf2d58abd" />
+ | <img width="1840" height="6164" alt="6bd48e838ede2c2784681cef61bb0c76" src="https://github.com/user-attachments/assets/9aa29eca-eb9a-4bab-9664-29c12e5f11e6" /> |
 
 | `技能 Wiki` | `查蛋结果` |
 |:---:|:---:|
