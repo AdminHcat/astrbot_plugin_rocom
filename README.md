@@ -12,7 +12,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/Entropy-Increase-Team/astrbot_plugin_rocom?style=for-the-badge\&color=45B7D1)](https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom/issues)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-FFc65f?style=for-the-badge\&logo=python)](https://github.com/Soulter/AstrBot)
 
-### 🚀 基于 WeGame API & 洛克王国数据 的查询工具 v3.1.0
+### 🚀 基于 WeGame API & 洛克王国数据 的查询工具 v3.1.1
 
 ### 扫码绑定 · 个人档案 · 家园查询 · 最近战绩 · 精灵背包 · 阵容助手
 
@@ -260,6 +260,13 @@ astrbot_plugin_rocom/
 
 <details>
 <summary>点击展开版本历史</summary>
+
+### v3.1.1 (2026-05-10)
+
+**优化**
+- 远行商人当前商品卡片新增金币价格和限购数量展示
+- 价格与限购从后端新增的 `random_goods` 数据中按商品名补齐，历史时段商品不展示该信息
+- 远行商人渲染截图倍率与视口尺寸下调，降低推送图片体积
 
 ### v3.1.0 (2026-05-10)
 

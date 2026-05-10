@@ -20,7 +20,7 @@ from .core.user import UserManager, MerchantSubscriptionManager, HomeSubscriptio
 from .core.render import Renderer
 from .core.egg_service import EggService, SearchResult
 
-@register("astrbot_plugin_rocom", "bvzrays & 熵增项目组", "洛克王国插件", "v3.1.0", "https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom")
+@register("astrbot_plugin_rocom", "bvzrays & 熵增项目组", "洛克王国插件", "v3.1.1", "https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom")
 class RocomPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -932,7 +932,9 @@ class RocomPlugin(Star):
         activity: Dict[str, Any],
         category: str,
         now_ms: int,
+        goods_meta: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
+        goods_meta = goods_meta or {}
         start_ms = self._merchant_timestamp_ms(item.get("start_time"))
         end_ms = self._merchant_timestamp_ms(item.get("end_time"))
         if start_ms is None:
@@ -956,6 +958,12 @@ class RocomPlugin(Star):
             "is_active": is_active,
             "status_label": status_label,
             "category": category,
+            "price": item.get("price") if item.get("price") not in (None, "") else goods_meta.get("price"),
+            "buy_limit_num": (
+                item.get("buy_limit_num")
+                if item.get("buy_limit_num") not in (None, "")
+                else goods_meta.get("buy_limit_num")
+            ),
         }
 
     def _merchant_history_groups(
@@ -1009,12 +1017,21 @@ class RocomPlugin(Star):
         all_products = []
         fallback_icon = "{{_res_path}}img/logo.cVSpb3sL.png"
         now_ms = int(datetime.now(self._cn_tz()).timestamp() * 1000)
+        random_goods = payload.get("random_goods") if isinstance(payload.get("random_goods"), list) else []
+        goods_meta_by_name = {
+            str(item.get("goods_name", "") or item.get("name", "")).strip(): item
+            for item in random_goods
+            if isinstance(item, dict) and str(item.get("goods_name", "") or item.get("name", "")).strip()
+        }
 
         for category, items in buckets:
             for item in items:
                 if not isinstance(item, dict):
                     continue
-                product = self._merchant_product_from_item(item, fallback_icon, activity, category, now_ms)
+                goods_meta = goods_meta_by_name.get(str(item.get("name", "") or "").strip(), {})
+                product = self._merchant_product_from_item(
+                    item, fallback_icon, activity, category, now_ms, goods_meta=goods_meta
+                )
                 all_products.append(product)
                 if product.get("is_active"):
                     products.append(product)
@@ -1048,9 +1065,9 @@ class RocomPlugin(Star):
             "render/yuanxing-shangren/index.html",
             data,
             {
-                "device_scale_factor": 3,
-                "viewport_width": 1600,
-                "viewport_height": 1200,
+                "device_scale_factor": 2,
+                "viewport_width": 1200,
+                "viewport_height": 1000,
             },
         )
         return img_url
