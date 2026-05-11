@@ -2,7 +2,7 @@
   "wegame_api_key": {
     "type": "string",
     "description": "API Key",
-    "hint": "用于访问 WeGame作用域的 API 的密钥，请暂时使用测试key，加群等待前端完毕后用正式key",
+    "hint": "API 密钥，请暂时使用测试key，加群等待前端完毕后用正式key",
     "default": ""
   },
   "api_base_url": {
