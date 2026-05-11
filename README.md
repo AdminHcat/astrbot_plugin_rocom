@@ -1,7 +1,7 @@
 <div align="center">
 
 # 🏰 astrbot\_plugin\_rocom
-# 由于前端正在构建，正式发布前端前可使用测试key：
+# 由于前端正在构建，正式发布前端前可使用测试key，加群等待申请正式key [1097809141](https://qm.qq.com/q/8SuHC3siIM) ：
 # sk-ff14f964051a5c966564e29b5bd3a768
 ### *WeGame 洛克王国数据查询*
 
