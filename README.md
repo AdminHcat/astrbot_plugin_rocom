@@ -504,7 +504,7 @@ astrbot_plugin_rocom/
 
 ## 🙏 鸣谢
 
-- **Astrbot**：[Soulter/AstrBot](https://github.com/Soulter/AstrBot) 提供强大的机器人开发与部署平台支撑
+- **Astrbot**：[AstrBotDevs/AstrBot](https://github.com/AstrBotDevs/AstrBot) 提供强大的机器人开发与部署平台支撑
 
 特别感谢：
 
