@@ -76,5 +76,17 @@
     "description": "家园订阅检查间隔",
     "hint": "单位：分钟。用于菜园成熟和精灵灵感订阅轮询",
     "default": 5
+  },
+  "announcement_subscription_enabled": {
+    "type": "bool",
+    "description": "启用洛克公告订阅推送",
+    "hint": "开启后定时检查最新公告，并向已订阅会话推送新公告",
+    "default": true
+  },
+  "announcement_poll_interval_minutes": {
+    "type": "int",
+    "description": "洛克公告订阅检查间隔",
+    "hint": "单位：分钟。用于新公告订阅轮询",
+    "default": 10
   }
 }

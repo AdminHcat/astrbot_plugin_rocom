@@ -16,11 +16,16 @@ from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Plain, Image
 
 from .core.client import RocomClient
-from .core.user import UserManager, MerchantSubscriptionManager, HomeSubscriptionManager
+from .core.user import (
+    UserManager,
+    MerchantSubscriptionManager,
+    HomeSubscriptionManager,
+    AnnouncementSubscriptionManager,
+)
 from .core.render import Renderer
 from .core.egg_service import EggService, SearchResult
 
-@register("astrbot_plugin_rocom", "bvzrays & 熵增项目组", "洛克王国插件", "v3.1.1", "https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom")
+@register("astrbot_plugin_rocom", "bvzrays & 熵增项目组", "洛克王国插件", "v3.2.0", "https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom")
 class RocomPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -37,6 +42,7 @@ class RocomPlugin(Star):
         self.user_mgr = UserManager(data_dir)
         self.merchant_sub_mgr = MerchantSubscriptionManager(data_dir)
         self.home_sub_mgr = HomeSubscriptionManager(data_dir)
+        self.announcement_sub_mgr = AnnouncementSubscriptionManager(data_dir)
         
         render_timeout = self.config.get("render_timeout", 30000)
         self.help_prefix_display = str(self.config.get("help_prefix_display", "") or "")
@@ -77,6 +83,16 @@ class RocomPlugin(Star):
         except (TypeError, ValueError):
             self.home_subscription_interval_minutes = 5
         self._home_subscription_task = None
+        self.announcement_subscription_enabled = self.config.get(
+            "announcement_subscription_enabled", True
+        )
+        try:
+            self.announcement_poll_interval_minutes = int(
+                self.config.get("announcement_poll_interval_minutes", 10) or 10
+            )
+        except (TypeError, ValueError):
+            self.announcement_poll_interval_minutes = 10
+        self._announcement_subscription_task = None
         
         # 启动时检查是否需要开启自动刷新
         logger.info(f"[Rocom] 插件初始化完成，自动刷新启用状态：{self.auto_refresh_enabled}, 刷新时间：{self.auto_refresh_time}, 通知群：{self.auto_refresh_notify_group}")
@@ -94,8 +110,18 @@ class RocomPlugin(Star):
             self._home_subscription_task = asyncio.create_task(
                 self._home_subscription_loop()
             )
+        if self.announcement_subscription_enabled:
+            self._announcement_subscription_task = asyncio.create_task(
+                self._announcement_subscription_loop()
+            )
 
     async def terminate(self):
+        if self._announcement_subscription_task and not self._announcement_subscription_task.done():
+            self._announcement_subscription_task.cancel()
+            try:
+                await self._announcement_subscription_task
+            except asyncio.CancelledError:
+                pass
         if self._home_subscription_task and not self._home_subscription_task.done():
             self._home_subscription_task.cancel()
             try:
@@ -780,6 +806,158 @@ class RocomPlugin(Star):
             sub["notify_state"] = notify_state
             sub["last_push_time"] = int(time.time())
             await self.home_sub_mgr.upsert_subscription(key, sub)
+            await asyncio.sleep(2)
+
+    def _announcement_id(self, item: Dict[str, Any] | None) -> str:
+        item = item or {}
+        return str(item.get("thread_id") or item.get("id") or "").strip()
+
+    def _announcement_ts(self, item: Dict[str, Any] | None) -> int:
+        item = item or {}
+        for key in ("published_at_ts", "publish_at_ts", "created_at_ts"):
+            try:
+                value = int(item.get(key) or 0)
+                if value > 0:
+                    return value
+            except (TypeError, ValueError):
+                pass
+        for key in ("publishAt", "published_at", "createdAt"):
+            text = str(item.get(key) or "").strip()
+            if not text:
+                continue
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%z"):
+                try:
+                    return int(datetime.strptime(text, fmt).timestamp())
+                except ValueError:
+                    continue
+        return 0
+
+    def _announcement_images(self, item: Dict[str, Any] | None) -> List[str]:
+        images = []
+        content = (item or {}).get("content") if isinstance((item or {}).get("content"), dict) else {}
+        for index in content.get("indexes") or []:
+            if not isinstance(index, dict):
+                continue
+            for field in ("imageUrl", "imagePreviewUrl"):
+                value = index.get(field)
+                if isinstance(value, list):
+                    images.extend([str(url) for url in value if url])
+                elif value:
+                    images.append(str(value))
+        cover = (item or {}).get("cover")
+        if cover:
+            images.insert(0, str(cover))
+        seen = set()
+        result = []
+        for url in images:
+            if url in seen:
+                continue
+            seen.add(url)
+            result.append(url)
+        return result
+
+    def _build_announcement_list_render_data(self, res: Dict[str, Any] | None) -> Dict[str, Any]:
+        items = (res or {}).get("list") or (res or {}).get("items") or []
+        cards = []
+        for index, item in enumerate(items, 1):
+            if not isinstance(item, dict):
+                continue
+            cards.append(
+                {
+                    "index": index,
+                    "id": self._announcement_id(item),
+                    "title": item.get("title", "未命名公告"),
+                    "summary": item.get("summary") or "",
+                    "cover": item.get("cover") or "",
+                    "time": item.get("publishAt") or item.get("published_at") or item.get("createdAt") or "",
+                    "author": ((item.get("author") or {}).get("nickname") if isinstance(item.get("author"), dict) else "") or "洛克王国：世界",
+                    "isStick": bool(item.get("isStick")),
+                }
+            )
+        return {
+            "title": "洛克王国公告",
+            "subtitle": f"第 {(res or {}).get('page', 1)} 页 · 共 {len(cards)} 条",
+            "cards": cards,
+            "has_more": bool((res or {}).get("has_more")),
+            "next_page": (res or {}).get("next_page"),
+            "commandHint": "💡 /洛克公告 <页码> | /洛克公告详情 <公告ID> | /洛克公告最新",
+        }
+
+    def _build_announcement_detail_render_data(self, item: Dict[str, Any] | None) -> Dict[str, Any]:
+        item = item or {}
+        content = item.get("content") if isinstance(item.get("content"), dict) else {}
+        return {
+            "title": item.get("title", "洛克王国公告"),
+            "summary": item.get("summary") or "",
+            "cover": item.get("cover") or "",
+            "time": item.get("publishAt") or item.get("published_at") or item.get("createdAt") or "",
+            "author": ((item.get("author") or {}).get("nickname") if isinstance(item.get("author"), dict) else "") or "洛克王国：世界",
+            "content_html": content.get("text") or "",
+            "images": self._announcement_images(item),
+            "stats": [
+                {"label": "浏览", "value": item.get("viewCount", 0)},
+                {"label": "收藏", "value": item.get("collectCount", 0)},
+                {"label": "分享", "value": item.get("shareCount", 0)},
+            ],
+            "commandHint": "💡 /订阅洛克公告 可订阅新公告推送",
+        }
+
+    async def _announcement_subscription_loop(self):
+        logger.info("[Rocom] 公告订阅循环任务已启动")
+        interval = max(1, int(self.announcement_poll_interval_minutes or 10)) * 60
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                await self._check_announcement_subscriptions()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"[Rocom] 公告订阅循环异常: {e}")
+                await asyncio.sleep(60)
+
+    async def _check_announcement_subscriptions(self):
+        all_subs = await self.announcement_sub_mgr.get_all_subscriptions()
+        if not all_subs:
+            return
+        latest = await self.client.get_announcement_latest()
+        if not latest:
+            return
+        latest_id = self._announcement_id(latest)
+        latest_ts = self._announcement_ts(latest)
+        if not latest_id:
+            return
+        detail = None
+        img_url = None
+        for key, sub in all_subs.items():
+            last_id = str(sub.get("last_id") or "")
+            last_ts = int(sub.get("since_ts") or 0)
+            if latest_id == last_id:
+                continue
+            if latest_ts and last_ts and latest_ts <= last_ts:
+                continue
+            if detail is None:
+                detail = await self.client.get_announcement_detail(latest_id) or latest
+                img_url = await self.renderer.render_html(
+                    "render/announcement/detail.html",
+                    self._build_announcement_detail_render_data(detail),
+                    {"device_scale_factor": 1.5, "viewport_width": 1100, "viewport_height": 1200},
+                )
+            chain = MessageChain().message(
+                f"【洛克王国新公告】\n{latest.get('title', '未命名公告')}\n"
+            )
+            if img_url:
+                chain.file_image(img_url)
+            elif latest.get("summary"):
+                chain.message(str(latest.get("summary")))
+            try:
+                await self.context.send_message(sub["umo"], chain)
+            except Exception as e:
+                logger.warning(f"[Rocom] 公告订阅推送失败: {e}")
+                continue
+            sub["last_id"] = latest_id
+            sub["since_ts"] = latest_ts or int(time.time())
+            sub["updated_at"] = int(time.time())
+            await self.announcement_sub_mgr.upsert_subscription(key, sub)
             await asyncio.sleep(2)
 
     def _merchant_check_times(self, base: datetime | None = None) -> List[datetime]:
@@ -2227,6 +2405,11 @@ class RocomPlugin(Star):
                         {"cmd": "洛克阵容 <分类> <页码>", "desc": "查看阵容助手推荐阵容 (参数可交换)"},
                         {"cmd": "洛克交换大厅 <页码>", "desc": "查看交换大厅海报 (支持别名：洛克大厅/交换大厅)"},
                         {"cmd": "远行商人", "desc": "查看当前轮次远行商人商品"},
+                        {"cmd": "洛克公告 [页码]", "desc": "查询洛克王国公告列表"},
+                        {"cmd": "洛克公告详情 <公告ID>", "desc": "查看指定公告详情"},
+                        {"cmd": "洛克公告最新", "desc": "查看最新一条公告"},
+                        {"cmd": "订阅洛克公告", "desc": "订阅新公告推送（群聊需群主/群管/bot管理员）"},
+                        {"cmd": "取消订阅洛克公告", "desc": "关闭当前会话的新公告推送"},
                         {"cmd": "洛克商店 <shop_id>", "desc": "实验性：查询商店信息，接口返回暂不稳定"},
                         {"cmd": "洛克玩家 <UID>", "desc": "通过 ingame 接口查询玩家基础信息，当前推荐优先使用"},
                         {"cmd": "洛克家园 [UID]", "desc": "通过 UID 查询自己或他人的家园菜园、守卫和室内精灵"},
@@ -2239,7 +2422,7 @@ class RocomPlugin(Star):
                         {"cmd": "洛克学生", "desc": "实验性：接口信息量有限，当前仅供测试查看（需登录）"},
                         {"cmd": "洛克wiki <精灵名>", "desc": "暂不可用：接口暂时关闭，当前仅返回提示"},
                         {"cmd": "洛克技能 <技能名>", "desc": "暂不可用：接口暂时关闭，当前仅返回提示"},
-                        {"cmd": "洛克查蛋 <精灵名>", "desc": "查询精灵蛋组及可配种精灵 (支持别名：查蛋)"},
+                        {"cmd": "洛克查蛋 <精灵名>", "desc": "后端图鉴优先查询蛋组及可配种精灵，后端不可用时本地兜底 (别名：查蛋)"},
                         {"cmd": "洛克查蛋 0.18m 1.5kg", "desc": "按身高和体重反查精灵，身高统一使用游戏原生 m"},
                         {"cmd": "洛克配种 <精灵A> <精灵B>", "desc": "判断两只精灵能否配种 (支持别名：配种)"}
                     ]
@@ -3063,6 +3246,106 @@ class RocomPlugin(Star):
             f"待后端重新开放后会恢复该功能。"
         )
 
+    @filter.command("洛克公告")
+    async def rocom_announcement_list(self, event: AstrMessageEvent, page: int = 1):
+        """查询洛克王国公告列表"""
+        try:
+            page = max(int(page or 1), 1)
+        except (TypeError, ValueError):
+            page = 1
+        res = await self.client.get_announcement_list(page=page, limit=8)
+        if not res:
+            yield event.plain_result(f"获取公告列表失败：{self.client.get_last_error()}")
+            return
+        data = self._build_announcement_list_render_data(res)
+        img_url = await self.renderer.render_html(
+            "render/announcement/list.html",
+            data,
+            {"device_scale_factor": 1.5, "viewport_width": 1100, "viewport_height": 1200},
+        )
+        if img_url:
+            yield event.image_result(img_url)
+        else:
+            titles = [item.get("title", "未命名公告") for item in (res.get("list") or res.get("items") or [])[:8]]
+            yield event.plain_result("公告列表：\n" + "\n".join(titles))
+
+    @filter.command("洛克公告详情")
+    async def rocom_announcement_detail(self, event: AstrMessageEvent, thread_id: str = ""):
+        """查询洛克王国公告详情"""
+        thread_id = str(thread_id or "").strip()
+        if not thread_id:
+            yield event.plain_result("请提供公告 ID。用法：/洛克公告详情 <公告ID>")
+            return
+        res = await self.client.get_announcement_detail(thread_id)
+        if not res:
+            yield event.plain_result(f"获取公告详情失败：{self.client.get_last_error()}")
+            return
+        data = self._build_announcement_detail_render_data(res)
+        img_url = await self.renderer.render_html(
+            "render/announcement/detail.html",
+            data,
+            {"device_scale_factor": 1.5, "viewport_width": 1100, "viewport_height": 1200},
+        )
+        if img_url:
+            yield event.image_result(img_url)
+        else:
+            yield event.plain_result(f"{data['title']}\n{data.get('summary') or '该公告暂无摘要。'}")
+
+    @filter.command("洛克公告最新")
+    async def rocom_announcement_latest(self, event: AstrMessageEvent):
+        """查询最新洛克王国公告"""
+        res = await self.client.get_announcement_latest()
+        if not res:
+            yield event.plain_result(f"获取最新公告失败：{self.client.get_last_error()}")
+            return
+        detail = await self.client.get_announcement_detail(self._announcement_id(res)) or res
+        data = self._build_announcement_detail_render_data(detail)
+        img_url = await self.renderer.render_html(
+            "render/announcement/detail.html",
+            data,
+            {"device_scale_factor": 1.5, "viewport_width": 1100, "viewport_height": 1200},
+        )
+        if img_url:
+            yield event.image_result(img_url)
+        else:
+            yield event.plain_result(f"{data['title']}\n{data.get('summary') or '该公告暂无摘要。'}")
+
+    @filter.command("订阅洛克公告")
+    async def subscribe_announcement(self, event: AstrMessageEvent):
+        """订阅洛克王国新公告提醒"""
+        if not event.is_private_chat() and not await self._is_group_admin(event):
+            yield event.plain_result("仅当前群管理员可以配置洛克公告订阅。")
+            return
+        key = str(event.unified_msg_origin)
+        latest = await self.client.get_announcement_latest()
+        latest_id = self._announcement_id(latest) if latest else ""
+        latest_ts = self._announcement_ts(latest) if latest else int(time.time())
+        await self.announcement_sub_mgr.upsert_subscription(
+            key,
+            {
+                "key": key,
+                "umo": event.unified_msg_origin,
+                "updated_by": str(event.get_sender_id()),
+                "last_id": latest_id,
+                "since_ts": latest_ts,
+                "updated_at": int(time.time()),
+            },
+        )
+        yield event.plain_result("已订阅洛克公告，新公告发布后会推送到当前会话。")
+
+    @filter.command("取消订阅洛克公告")
+    async def unsubscribe_announcement(self, event: AstrMessageEvent):
+        """取消洛克王国新公告提醒"""
+        if not event.is_private_chat() and not await self._is_group_admin(event):
+            yield event.plain_result("仅当前群管理员可以取消洛克公告订阅。")
+            return
+        key = str(event.unified_msg_origin)
+        deleted = await self.announcement_sub_mgr.delete_subscription(key)
+        if deleted:
+            yield event.plain_result("已取消当前会话的洛克公告订阅。")
+        else:
+            yield event.plain_result("当前会话没有洛克公告订阅。")
+
     @filter.command("远行商人", alias={"yxsr"})
     async def rocom_merchant(self, event: AstrMessageEvent):
         """查询远行商人"""
@@ -3710,6 +3993,53 @@ class RocomPlugin(Star):
         name = " ".join(name_parts)
         if not name:
             yield event.plain_result("请输入精灵名称。用法：/洛克查蛋 <精灵名>")
+            return
+
+        backend_detail = None
+        backend_list = await self.client.get_pet_list(q=name, page_no=1, page_size=10)
+        backend_items = (backend_list or {}).get("items") or []
+        if backend_items:
+            selected = None
+            for item in backend_items:
+                item_name = str(item.get("name") or "").strip()
+                item_form = str(item.get("form") or "").strip()
+                if item_name == name or (item_form and f"{item_name}{item_form}" == name):
+                    selected = item
+                    break
+            if selected is None and len(backend_items) == 1:
+                selected = backend_items[0]
+            if selected is not None:
+                backend_detail = await self.client.get_pet_detail(pet_id=selected.get("id"))
+                if not backend_detail:
+                    backend_detail = selected
+        if not backend_detail:
+            backend_detail = await self.client.get_pet_detail(name=name)
+        if backend_detail:
+            compatible_by_group = {}
+            for group in backend_detail.get("egg_group") or []:
+                group_name = str(group or "").strip()
+                if not group_name:
+                    continue
+                group_res = await self.client.get_pet_list(
+                    egg_group=group_name, page_no=1, page_size=31
+                )
+                compatible_by_group[group_name] = (group_res or {}).get("items") or []
+                await asyncio.sleep(0.2)
+            data = self.egg_searcher.build_search_data_from_api(
+                backend_detail, compatible_by_group
+            )
+            data["commandHint"] = "💡 数据来自后端图鉴；后端不可用时自动回退本地查蛋"
+            data["copyright"] = "AstrBot & WeGame Locke Kingdom Plugin"
+            img_url = await self.renderer.render_html("render/searcheggs/index.html", data)
+            if img_url:
+                yield event.image_result(img_url)
+            else:
+                yield event.plain_result(
+                    f"🥚 {data['pet_name']} (#{data['pet_id']})\n"
+                    f"属性：{data['type_label']}\n"
+                    f"蛋组：{data['egg_groups_label']}\n"
+                    f"可配种精灵数：{data['total_compatible']}"
+                )
             return
 
         sr = self.egg_searcher.search(name)

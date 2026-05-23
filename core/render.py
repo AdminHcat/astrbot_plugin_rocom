@@ -346,7 +346,9 @@ class Renderer:
                         '.friendship-page',
                         '.student-state-page',
                         '.student-perks-page',
-                        '.student-page'
+                        '.student-page',
+                        '.announcement-list-page',
+                        '.announcement-detail-page'
                     ];
                     for (const selector of selectors) {
                         const element = document.querySelector(selector);

@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..render.searcheggs.eggs import EggSearcher, SearchResult, format_egg_groups
+from ..render.searcheggs.eggs import (
+    EggSearcher,
+    SearchResult,
+    format_egg_groups,
+    get_egg_group_label,
+)
 
 
 class EggService(EggSearcher):
@@ -137,6 +142,102 @@ class EggService(EggSearcher):
         lines.append("\n💡 /洛克查蛋 <精灵名> 查看详细蛋组信息")
         return "\n".join(lines)
 
+    def build_search_data_from_api(
+        self,
+        pet: dict[str, Any],
+        compatible_by_group: dict[str, list[dict[str, Any]]] | None = None,
+    ) -> dict[str, Any]:
+        """Adapt backend pet/detail data to the existing egg search template."""
+        compatible_by_group = compatible_by_group or {}
+        egg_groups = self._api_egg_groups(pet.get("egg_group"))
+        egg_group_labels = {
+            gid: (get_egg_group_label(gid) if isinstance(gid, int) else str(gid))
+            for gid in egg_groups
+        }
+        sections = []
+        compatible_seen = set()
+        total_compatible = 0
+        for gid in egg_groups:
+            if gid == 1:
+                sections.append(
+                    {
+                        "id": gid,
+                        "label": "未发现",
+                        "desc": "不能和任何精灵生蛋，多用于传说中的精灵",
+                        "count": 0,
+                        "members": [],
+                        "has_more": False,
+                        "total": 0,
+                    }
+                )
+                continue
+            group_name = str(gid)
+            raw_members = compatible_by_group.get(group_name) or []
+            members = []
+            for item in raw_members:
+                item_id = item.get("id")
+                if item_id == pet.get("id"):
+                    continue
+                key = str(item_id or item.get("name") or "")
+                if key and key not in compatible_seen:
+                    compatible_seen.add(key)
+                    total_compatible += 1
+                members.append(self._format_api_member(item))
+            sections.append(
+                {
+                    "id": gid,
+                    "label": group_name,
+                    "desc": "",
+                    "count": len(members),
+                    "members": members[:30],
+                    "has_more": len(members) > 30,
+                    "total": len(members),
+                }
+            )
+
+        attr = pet.get("attribute") or {}
+        breeding = pet.get("breeding") or {}
+        bp = pet.get("breeding_profile") or {}
+        male_rate, female_rate = self._api_gender_rates(bp, breeding)
+        return {
+            "pet_name": pet.get("name") or "未知精灵",
+            "pet_id": pet.get("id") or "-",
+            "pet_icon": pet.get("pet_icon_url") or pet.get("icon_url") or self._pet_icon_url(pet.get("id")),
+            "pet_image": pet.get("pet_img_url") or pet.get("image_url") or self._pet_image_url(pet.get("id")),
+            "type_label": self._api_type_label(pet),
+            "egg_groups_label": " / ".join(str(egg_group_labels.get(gid, gid)) for gid in egg_groups) or "暂无蛋组数据",
+            "egg_groups": egg_groups,
+            "egg_group_labels": egg_group_labels,
+            "male_rate": male_rate,
+            "female_rate": female_rate,
+            "hatch_label": self._fmt_dur(breeding.get("hatch_data")),
+            "weight_label": self._fmt_range(
+                self._wt(pet.get("weight_low") or breeding.get("weight_low")),
+                self._wt(pet.get("weight_high") or breeding.get("weight_high")),
+                "kg",
+            ),
+            "height_label": self._fmt_range(
+                self._ht(pet.get("height_low") or breeding.get("height_low")),
+                self._ht(pet.get("height_high") or breeding.get("height_high")),
+                "m",
+            ),
+            "total_compatible": total_compatible,
+            "is_undiscovered": 1 in egg_groups,
+            "egg_group_sections": sections,
+            "total_stats": sum(
+                self._num(attr.get(key)) or 0
+                for key in (
+                    "attr_hp",
+                    "attr_atk",
+                    "attr_spatk",
+                    "attr_def",
+                    "attr_spdef",
+                    "attr_spd",
+                )
+            ),
+            "egg_details": self._build_egg_details(breeding),
+        }
+
     def build_size_search_text(
         self,
         height: float = None,
@@ -198,6 +299,52 @@ class EggService(EggSearcher):
             "commandHint": "💡 请使用更精确的名称重新查询",
             "copyright": "AstrBot & WeGame Locke Kingdom Plugin",
         }
+
+    def _api_egg_groups(self, value: Any) -> list[Any]:
+        if not value:
+            return []
+        if not isinstance(value, list):
+            value = [value]
+        groups = []
+        for item in value:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            if "未发现" in text:
+                groups.append(1)
+            else:
+                groups.append(text)
+        return groups
+
+    def _api_type_label(self, pet: dict[str, Any]) -> str:
+        types = pet.get("unit_type")
+        if isinstance(types, list) and types:
+            return " / ".join(str(item) for item in types if item) or "未知"
+        return str(pet.get("type") or pet.get("attribute_name") or "未知")
+
+    def _format_api_member(self, item: dict[str, Any]) -> dict[str, Any]:
+        egg_groups = self._api_egg_groups(item.get("egg_group"))
+        return {
+            "name": item.get("name") or "未知精灵",
+            "id": item.get("id") or "-",
+            "type_label": self._api_type_label(item),
+            "egg_groups_label": " / ".join(
+                get_egg_group_label(gid) if isinstance(gid, int) else str(gid)
+                for gid in egg_groups
+            ) or "暂无蛋组数据",
+        }
+
+    def _api_gender_rates(
+        self, breeding_profile: dict[str, Any], breeding: dict[str, Any]
+    ) -> tuple[Any, Any]:
+        male_rate = breeding_profile.get("male_rate")
+        female_rate = breeding_profile.get("female_rate")
+        if male_rate is not None or female_rate is not None:
+            return male_rate, female_rate
+        voice_percent = breeding.get("voice_percent")
+        if isinstance(voice_percent, list) and len(voice_percent) >= 2:
+            return voice_percent[0], voice_percent[1]
+        return None, None
 
     def build_want_pet_data(self, pet: dict) -> dict[str, Any]:
         fathers = self.get_breeding_parents(pet)
